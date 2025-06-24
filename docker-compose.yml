@@ -1,0 +1,15 @@
+version: "3.8"
+
+services:
+  tezos-delegation-service:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - delegation_data:/app
+    environment:
+      - TZ=UTC
+    restart: unless-stopped
+
+volumes:
+  delegation_data:
