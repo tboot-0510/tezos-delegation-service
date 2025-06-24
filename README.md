@@ -10,10 +10,11 @@ make run
 ```
 API is accessible at ```http://localhost:3000/xtz/delegations```
 
+## Run the tests 
 ```
 make test 
 ```
-
+## Additional commands
 ```
 make build 
 ```
