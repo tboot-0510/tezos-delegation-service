@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -13,6 +12,19 @@ import (
 
 	"github.com/gorilla/mux"
 )
+
+type DelegationAPIResponse struct {
+	Timestamp string `json:"timestamp"`
+	Amount    string `json:"amount"`
+	Delegator string `json:"delegator"`
+	Level     string `json:"level"`
+}
+
+type WrappedResponse struct {
+	Data   []DelegationAPIResponse `json:"data"`
+	Offset int                     `json:"offset"`
+	Limit  int                     `json:"limit"`
+}
 
 type ApiServer struct {
 	svc service.XtzService
@@ -42,6 +54,7 @@ func (s *ApiServer) handleGetDelegations(w http.ResponseWriter, r *http.Request)
 	logger := r.Context().Value(middleware.LoggerKey).(*slog.Logger)
 
 	yearParam := r.URL.Query().Get("year")
+	offsetParam := r.URL.Query().Get("offset")
 
 	year, err := func() (int, error) {
 		if yearParam == "" {
@@ -57,14 +70,39 @@ func (s *ApiServer) handleGetDelegations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	entry, err := s.svc.GetDelegations(context.Background(), year)
+	offset, err := func() (int, error) {
+		if offsetParam == "" {
+			return 0, nil
+		}
+		parsedOffset, parseErr := strconv.Atoi(offsetParam)
+		return parsedOffset, parseErr
+	}()
+
+	if err != nil {
+		logger.Error("Invalid offset parameter", "error", err)
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Invalid offset parameter"})
+		return
+	}
+
+	entry, err := s.svc.GetDelegations(year, offset)
+
 	if err != nil {
 		logger.Error("Error fetching delegations", "error", err)
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, entry)
+	var apiResults []DelegationAPIResponse
+	for _, d := range entry {
+		apiResults = append(apiResults, DelegationAPIResponse{
+			Timestamp: d.Timestamp,
+			Amount:    strconv.Itoa(d.Amount),
+			Delegator: d.Delegator,
+			Level:     strconv.Itoa(d.Level),
+		})
+	}
+
+	writeJSON(w, http.StatusOK, WrappedResponse{Data: apiResults, Offset: offset, Limit: 50})
 }
 
 func writeJSON(w http.ResponseWriter, s int, v any) error {
@@ -83,7 +121,6 @@ func (e *InvalidYearError) Error() string {
 }
 
 func verifyYear(year int, err error) (int, error) {
-
 	if err != nil {
 		return 0, err
 	}

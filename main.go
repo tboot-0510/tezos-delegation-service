@@ -1,9 +1,10 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
-	api "tezos-delegation-service/internal/api"
+	"tezos-delegation-service/internal/api"
 	"tezos-delegation-service/internal/middleware"
 	"tezos-delegation-service/internal/repository"
 	"tezos-delegation-service/internal/service"
@@ -16,7 +17,7 @@ func main() {
 	middleware.Logger = logger
 
 	// init the transport layer - calls tzkt API
-	tzkt := transport.NewTzktClient("https://api.tzkt.io/v1/operations/delegations?limit=100")
+	tzkt := transport.NewTzktClient("https://api.tzkt.io/v1/operations/delegations?limit=1000")
 
 	// init the repository layer - uses sqlite
 	repo, err := repository.NewDatabase("delegations.db")
@@ -27,12 +28,16 @@ func main() {
 
 	// init the service layer - uses tzkt client and repository
 	// this is the business logic layer - it fetches data from the tzkt client and stores it in the repository
-	service := service.NewXtzFetcherService(repo, tzkt)
+	svc := service.NewXtzFetcherService(repo, tzkt)
 
-	// have a func to get the delegations at startup
-	// should run in a goroutine go func()
-	// if get api and db store is empty make a call to tzkt client and store the data in the repository
+	// Get the delegations at startup
+	go func() {
+		ctx := context.Background()
+		poller := service.NewPoller(ctx, repo, svc, logger)
+		poller.Start()
 
-	server := api.NewApiServer(service)
+	}()
+
+	server := api.NewApiServer(svc)
 	server.Start(":3000")
 }
